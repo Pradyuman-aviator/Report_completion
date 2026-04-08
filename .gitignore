@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# Large data files (do NOT commit)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.feather
+
+# Model checkpoints (too large for GitHub)
+ml_pipeline/checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+
+# Weights & Biases
+wandb/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temp
+test.py

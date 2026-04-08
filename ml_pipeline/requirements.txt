@@ -1,0 +1,29 @@
+# ml_pipeline/requirements.txt
+# ================================
+# Install with:  pip install -r ml_pipeline/requirements.txt
+# Recommended:   use a venv or conda env first.
+# MPS note:      Requires PyTorch >= 2.0 for stable MPS + autocast support.
+
+# ── Core ─────────────────────────────────────────────────────────────────────
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0          # not strictly required, makes torch install cleaner
+
+# ── ML / Training ────────────────────────────────────────────────────────────
+transformers>=4.38.0       # ClinicalBERT via HuggingFace
+einops>=0.7.0              # optional but useful for tensor rearrangements
+
+# ── Configuration ────────────────────────────────────────────────────────────
+pyyaml>=6.0.1              # config.yaml loading
+omegaconf>=2.3.0           # optional: structured config (can replace pyyaml)
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+pandas>=2.0.0
+Pillow>=10.0.0             # PIL image loading
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+wandb>=0.16.0
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+tqdm>=4.66.0               # progress bars in precompute_bert.py
+numpy>=1.24.0
