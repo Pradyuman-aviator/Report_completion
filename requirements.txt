@@ -1,0 +1,35 @@
+# MedFill — Requirements
+# Install with: pip install -r requirements.txt
+#
+# NOTE: PyTorch (torch/torchvision) must be installed separately with CUDA support.
+# See: https://pytorch.org/get-started/locally/
+# For CUDA 12.1 (RTX 4050 / most modern GPUs):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# ── Core API ─────────────────────────────────────────────────────────────────
+fastapi>=0.119.0
+uvicorn>=0.37.0
+python-multipart>=0.0.20        # file upload support for FastAPI
+httpx>=0.28.0                   # async HTTP client
+
+# ── AI / ML ──────────────────────────────────────────────────────────────────
+torch>=2.5.1                    # install with CUDA — see note above
+torchvision>=0.20.0
+easyocr>=1.7.2                  # GPU-accelerated OCR (replaces llava:7b)
+scikit-learn>=1.6.0             # preprocessing utilities
+
+# ── Computer Vision ───────────────────────────────────────────────────────────
+opencv-python>=4.11.0           # image preprocessing (CLAHE, deskew, threshold)
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+numpy>=2.0.0
+pandas>=2.0.0
+
+# ── Schema / Validation ───────────────────────────────────────────────────────
+pydantic>=2.0.0
+
+# ── Ollama (optional — only for llama3 backup structuring) ───────────────────
+ollama>=0.6.0                   # local LLM client (optional, not required for core pipeline)
+
+# ── Experiment Tracking (optional) ───────────────────────────────────────────
+wandb>=0.25.0                   # training metrics (optional, can be disabled)
