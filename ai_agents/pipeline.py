@@ -107,17 +107,28 @@ class MedicalReportPipeline:
         cleaned_image_dir:         Optional[str | Path] = None,
         max_structuring_retries:   int   = 3,
         skip_vision_preprocessing: bool  = False,
+        use_easyocr:               bool  = True,
     ) -> None:
-        self.skip_vision_preprocessing   = skip_vision_preprocessing
+        self.skip_vision_preprocessing = skip_vision_preprocessing
 
-        logger.info("[Pipeline] Initializing agents…")
+        logger.info("[Pipeline] Initializing agents...")
 
-        self._vision = VisionAgent(
-            model              = vision_model,
-            ollama_host        = ollama_host,
-            save_cleaned       = save_cleaned_images,
-            cleaned_output_dir = cleaned_image_dir,
-        )
+        if use_easyocr:
+            from ai_agents.easyocr_agent import EasyOCRAgent
+            self._vision = EasyOCRAgent(
+                use_gpu            = True,
+                save_cleaned       = save_cleaned_images,
+                cleaned_output_dir = cleaned_image_dir,
+            )
+            logger.info("[Pipeline] OCR engine: EasyOCR (GPU)")
+        else:
+            self._vision = VisionAgent(
+                model              = vision_model,
+                ollama_host        = ollama_host,
+                save_cleaned       = save_cleaned_images,
+                cleaned_output_dir = cleaned_image_dir,
+            )
+            logger.info(f"[Pipeline] OCR engine: llava ({vision_model})")
 
         self._structuring = StructuringAgent(
             model        = structuring_model,
@@ -126,8 +137,7 @@ class MedicalReportPipeline:
         )
 
         logger.info(
-            f"[Pipeline] Ready  |  VLM={vision_model}  LLM={structuring_model}  "
-            f"host={ollama_host}"
+            f"[Pipeline] Ready  |  LLM={structuring_model}  host={ollama_host}"
         )
 
     # ── Single image ─────────────────────────────────────────────────────────

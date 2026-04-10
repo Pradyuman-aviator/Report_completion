@@ -153,6 +153,27 @@ class LabResult(BaseModel):
     flag:            AbnormalityFlag= Field(AbnormalityFlag.UNKNOWN)
     method:          Optional[str]  = Field(None, description="Measurement method if stated, e.g. 'Spectrophotometry'.")
 
+    @field_validator("flag", mode="before")
+    @classmethod
+    def coerce_null_flag(cls, v):
+        """LLMs output non-standard values for flag — coerce to valid enum."""
+        if v is None:
+            return AbnormalityFlag.UNKNOWN
+        if isinstance(v, str):
+            v_lower = v.lower().strip()
+            # Map common LLM outputs to valid enum values
+            if v_lower in ("final", "pending", "n/a", "none", "---", ""):
+                return AbnormalityFlag.UNKNOWN
+            if v_lower in ("normal", "n"):
+                return AbnormalityFlag.NORMAL
+            if v_lower in ("high", "h", "above"):
+                return AbnormalityFlag.HIGH
+            if v_lower in ("low", "l", "below"):
+                return AbnormalityFlag.LOW
+            if v_lower in ("critical", "c", "panic"):
+                return AbnormalityFlag.CRITICAL
+        return v
+
     @model_validator(mode="after")
     def auto_flag(self) -> "LabResult":
         """Auto-compute flag from value + reference range if not set by LLM."""
@@ -265,6 +286,32 @@ class MedicalReportPayload(BaseModel):
     # ── Identity ──────────────────────────────────────────────────────────
     report_type:    ReportType          = Field(ReportType.UNKNOWN)
     report_date:    Optional[str]       = Field(None, description="ISO-8601: YYYY-MM-DD.")
+
+    @field_validator("report_type", mode="before")
+    @classmethod
+    def coerce_report_type(cls, v):
+        """Map common LLM variants to valid ReportType enum values."""
+        if v is None:
+            return ReportType.UNKNOWN
+        if isinstance(v, str):
+            v_lower = v.lower().strip().replace(" ", "_")
+            # Common LLM outputs → valid enum
+            _MAP = {
+                "laboratory_report": "blood_test",
+                "lab_report": "blood_test",
+                "lab_test": "blood_test",
+                "cbc": "blood_test",
+                "blood_work": "blood_test",
+                "clinical_report": "blood_test",
+            }
+            if v_lower in _MAP:
+                return _MAP[v_lower]
+            # Try direct enum match
+            try:
+                return ReportType(v_lower)
+            except ValueError:
+                return ReportType.UNKNOWN
+        return v
     report_id:      Optional[str]       = Field(None, description="Lab / hospital report reference number.")
     accession_no:   Optional[str]       = Field(None, description="Radiology accession number if present.")
 
@@ -280,6 +327,30 @@ class MedicalReportPayload(BaseModel):
     diagnoses:      List[Diagnosis]             = Field(default_factory=list)
     medications:    List[Medication]            = Field(default_factory=list)
     imaging:        Optional[ImagingFinding]    = None
+
+    @field_validator("medications", mode="before")
+    @classmethod
+    def strip_null_medications(cls, v):
+        """Remove entries where drug_name is None — LLMs sometimes add placeholder objects."""
+        if not isinstance(v, list):
+            return v
+        return [m for m in v if isinstance(m, dict) and m.get("drug_name") not in (None, "", "null")]
+
+    @field_validator("diagnoses", mode="before")
+    @classmethod
+    def strip_null_diagnoses(cls, v):
+        """Remove diagnosis entries with literal 'string or null' as severity (schema leakage)."""
+        if not isinstance(v, list):
+            return v
+        clean = []
+        for d in v:
+            if isinstance(d, dict):
+                sev = d.get("severity", "")
+                if isinstance(sev, str) and "string" in sev.lower():
+                    d["severity"] = "unknown"
+                if d.get("name") not in (None, "", "null"):
+                    clean.append(d)
+        return clean
     clinical_summary: Optional[str]            = Field(
         None, description="Free-text clinical notes / chief complaint / history."
     )
