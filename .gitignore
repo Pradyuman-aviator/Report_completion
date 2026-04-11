@@ -57,3 +57,32 @@ logs/
 
 # Temp
 test.py
+
+# ── Node.js / Frontend (Fronted_medfill) ─────────────────────────────────────
+node_modules/
+Fronted_medfill/node_modules/
+dashboard_ui/node_modules/
+
+# Vite build output
+Fronted_medfill/dist/
+Fronted_medfill/.vite/
+dashboard_ui/dist/
+
+# Frontend env files
+Fronted_medfill/.env
+Fronted_medfill/.env.local
+Fronted_medfill/.env.*.local
+
+# npm / yarn / pnpm lockfiles (keep package-lock.json, ignore others)
+yarn.lock
+pnpm-lock.yaml
+.pnp
+.pnp.js
+
+# npm cache / debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vite temp cache
+.vite/
