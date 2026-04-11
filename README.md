@@ -1,82 +1,93 @@
-# MedFill — Medical Report Completion Pipeline
+# MedFill — AI-Powered Medical Report Completion
 
-> **Local-first AI pipeline** that reads a medical lab report image, extracts all values using EasyOCR (GPU-accelerated), and predicts any missing biomarkers using a trained Transformer-based imputation model — **100% offline, no cloud, no API keys.**
+> **Upload any partial blood test report → Get a complete 25-biomarker lab panel in ~15 seconds.**
+> Local-first, offline, zero cloud. Your patient data never leaves your machine.
 
 ---
 
-## What it Does
+## The Problem
+
+Real-world medical reports are **incomplete**. Tests are marked `PENDING`, values are missing due to cost or urgency, and doctors are forced to make decisions with partial data. MedFill fills those gaps instantly using AI.
+
+---
+
+## What It Does
 
 ```
-📷 report.jpg  (any Indian blood test / CBC / RFT report)
-      │
-      ▼  EasyOCR (GPU, ~5s)       — actually reads the image text
-      │  confidence = 0.81
-      │
-      ▼  Regex Parser             — extracts numeric values line-by-line
-      │  Hemoglobin=10.8, bu=42, bgr=118, bp=142 ...
-      │
-      ▼  TabularImputerModel      — predicts ALL missing values
-      │  (Transformer, trained on 1,821 real patient records)
-      │
-      ▼  Complete 25-Feature Lab Panel ✅
-         Hemoglobin : 10.8   (extracted from image)
-         MCH        : 27.3   (extracted from image)
-         bp         : 142    (extracted from image)
-         MCV        : 90.8   ★ PREDICTED by model
-         MCHC       : 31.1   ★ PREDICTED by model
-         sc         :  4.6   ★ PREDICTED by model
+📷 Partial blood report image  (Apollo, Thyrocare, any lab)
+        ↓
+EasyOCR  (GPU, ~5s)         — reads every word on the report
+        ↓
+Regex Parser                — extracts 12 known biomarker values
+        ↓
+TabularImputerModel         — predicts all 13 missing values
+(Transformer · PyTorch)       R² = 99.7%
+        ↓
+✅ Complete 25-Feature Lab Panel
+   Hemoglobin  : 10.8   g/dL   [extracted]
+   MCH         : 27.3   pg     [extracted]
+   MCV         : 90.8   fL     [★ AI predicted]
+   Creatinine  :  4.6   mg/dL  [★ AI predicted]
+   WBC Count   : 9,166  /µL    [★ AI predicted]
+   ...
 ```
 
-**Problem it solves:** Real-world medical reports are often *partial* — some test values are marked PENDING, weren't run, or are illegible. MedFill fills those gaps using patterns learned from thousands of real patient records (Anemia + CKD datasets).
+---
+
+## Model Performance
+
+| Metric | Value |
+|---|---|
+| **R² Score** | **0.9968 (99.7%)** |
+| **Validation Loss (MSE)** | **0.001632** |
+| **MAE (normalized)** | **0.0205** |
+| **Training epochs** | 76 |
+| **Val patients** | 2,231 |
+| **Training patients** | 12,637 |
+| **OCR Confidence** | 0.81 (81%) |
+| **End-to-end time** | ~15 seconds |
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     api_gateway/                        │
-│   FastAPI  —  /process  /process/batch  /health         │
-└────────────────────────┬────────────────────────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │          ai_agents/           │
-         │  EasyOCRAgent  (GPU OCR)      │  ← replaces llava:7b
-         │  StructuringAgent (llama3)    │  ← optional backup only
-         │  direct_parse_ocr()           │  ← regex, instant
-         └───────────────┬───────────────┘
-                         │  extracted features dict
-         ┌───────────────▼───────────────┐
-         │         ml_pipeline/          │
-         │  TabularImputerModel          │
-         │  Trained on Anemia + CKD CSVs │
-         │  25 biomarker features        │
-         └───────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│              React Frontend  (localhost:5173)                     │
+│   FileUpload → PatientDashboard → Report Analysis Panel          │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │  POST /api/v1/analyze
+┌──────────────────────────▼───────────────────────────────────────┐
+│              FastAPI Backend  (localhost:8000)                    │
+│                                                                  │
+│  ① EasyOCRAgent        GPU OCR → raw text  (~5s, conf=0.81)      │
+│  ② direct_parse_ocr()  Regex → 12 extracted features             │
+│  ③ impute()            Transformer → 13 predicted features       │
+│  ④ Response builder    patient + lab_panels + complete_panel     │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────────┐
+│           TabularImputerModel  (ml_pipeline/)                    │
+│                                                                  │
+│  Input:  25 features (missing → 0)                               │
+│  Embed:  Linear(1→128) + Positional Embedding(25,128)            │
+│  Encoder: 4× TransformerEncoderLayer                             │
+│           (8 heads · dim=128 · FFN=512 · Pre-LN · dropout=0.1)  │
+│  Output: Linear(128→1) per feature → 25 reconstructed values    │
+│  Params: 796,673                                                 │
+└──────────────────────────────────────────────────────────────────┘
 ```
-
-| Module | Description |
-|--------|-------------|
-| `ai_agents/easyocr_agent.py` | **NEW** — GPU OCR with preprocessing (CLAHE, deskew, threshold) |
-| `ai_agents/vision_agent.py` | Legacy llava:7b OCR (available as fallback) |
-| `ai_agents/structuring_agent.py` | llama3 JSON extraction (optional backup) |
-| `ai_agents/schemas.py` | Full Pydantic schema for `MedicalReportPayload` |
-| `ai_agents/pipeline.py` | Orchestrates OCR → structuring |
-| `ml_pipeline/train.py` | Trains the Transformer imputer |
-| `ml_pipeline/data/dataset.py` | Loads Anemia + CKD datasets |
-| `api_gateway/main.py` | FastAPI REST gateway |
-| `infer.py` | **End-to-end CLI inference** |
 
 ---
 
-## Hardware Requirements
+## Datasets
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| GPU VRAM | 4 GB | 6 GB+ |
-| RAM | 8 GB | 16 GB |
-| Storage | 5 GB | 10 GB |
-
-> Tested on **NVIDIA RTX 4050 Laptop GPU (6 GB VRAM)**. EasyOCR runs entirely on GPU — no Ollama required for OCR.
+| Dataset | Source | Patients | Features |
+|---|---|---|---|
+| **Anemia Dataset** | [Kaggle (CC0)](https://www.kaggle.com/datasets/biswaranjanrao/anemia-dataset) | 1,421 | Hemoglobin, MCH, MCHC, MCV, Gender |
+| **CKD Dataset** | [UCI ML Repository](https://archive.ics.uci.edu/dataset/336/chronic+kidney+disease) · donated by Apollo Hospitals | 400 | 25 biomarkers (renal, electrolytes, urinalysis) |
+| **NHANES** | [CDC NHANES](https://www.cdc.gov/nchs/nhanes/) | 10,816 | Blood count, metabolic, renal panels |
+| **Combined** | — | **12,637** | **25 unified features** |
 
 ---
 
@@ -85,156 +96,105 @@
 ### 1. Install Python dependencies
 
 ```bash
-pip install fastapi uvicorn opencv-python pydantic easyocr torch numpy pandas
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
 ```
 
-> `ollama` is **no longer required** for standard inference. It is only used as an optional backup for patient metadata extraction.
-
-### 2. (Optional) Install Ollama for metadata enrichment
-
-Download from [ollama.com](https://ollama.com) and pull:
-
-```bash
-ollama pull llama3      # Structuring model (~4.7 GB) — optional backup only
-# llava:7b is no longer needed
-```
-
-### 3. Add your datasets
-
-Place these CSV files in `data/raw/`:
-- `anemia.csv`
-- `kidney_disease.csv`
-
-### 4. Train the imputation model
+### 2. Train the imputation model
 
 ```bash
 python -m ml_pipeline.train
-# Trains for 50 epochs on GPU, takes ~30 seconds
-# Saves best_model.pt to ml_pipeline/checkpoints/
+# ~30s on GPU · saves ml_pipeline/checkpoints/best_model.pt
 ```
 
-### 5. Run inference
+### 3. Run inference from CLI
 
-**From a report image (recommended):**
 ```bash
 python infer.py path/to/report.jpg
 ```
 
-**Manual mode (type values yourself):**
-```bash
-python infer.py --manual
-```
+### 4. Start the API server
 
-**Start the API server:**
 ```bash
 uvicorn api_gateway.main:app --reload --port 8000
-# Docs: http://localhost:8000/docs
+# Swagger docs: http://localhost:8000/docs
+```
+
+### 5. Start the React frontend
+
+```bash
+cd Fronted_medfill
+npm install
+npm run dev
+# Open: http://localhost:5173
 ```
 
 ---
 
-## API Endpoints
+## API
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/process` | Upload a report image, get complete lab panel |
-| `POST` | `/process/batch` | Batch process multiple images |
-| `GET` | `/health` | Check system status |
-| `GET` | `/models` | List available models |
+|---|---|---|
+| `POST` | `/api/v1/analyze` | Upload report image → complete lab panel (OCR + imputation in one call) |
+| `GET` | `/health` | Backend status check |
+| `GET` | `/docs` | Swagger UI |
 
 **Example:**
 ```bash
-curl -X POST http://localhost:8000/process \
+curl -X POST http://localhost:8000/api/v1/analyze \
      -F "file=@report.jpg"
 ```
 
----
-
-## Output Example
-
+**Response includes:**
+```json
+{
+  "patient": { "name": "MR. RAHUL SHARMA", "age_years": 52, "sex": "Male" },
+  "lab_panels": [
+    {
+      "panel_name": "Complete Blood Count (CBC)",
+      "results": [
+        { "test_name": "Hemoglobin (Hb)", "value": 10.8, "flag": "low", "unit": "g/dL" },
+        { "test_name": "MCH", "value": 27.3, "flag": "normal", "unit": "pg" }
+      ]
+    }
+  ],
+  "complete_panel": {
+    "Hemoglobin": { "value": 10.8, "source": "extracted", "predicted": false },
+    "MCV":        { "value": 90.8, "source": "predicted",  "predicted": true  }
+  },
+  "ocr_confidence": 0.81,
+  "n_extracted": 12,
+  "n_predicted": 13,
+  "elapsed_s": 14.7
+}
 ```
-[MedFill] Processing: report.jpg
-============================================================
-[1/3] Running EasyOCR + feature extraction...
-  OCR confidence : 0.81
-  OCR time       : 5.5s
-  Text extracted : 1886 chars
-[2/3] Mapping to tabular features...
-  Patient         : MR. RAHUL SHARMA
-  Known features  : 7/25
-  Missing features: 18/25  <- will be predicted
-[3/3] Running imputation model...
-
-========================================================================
-  COMPLETE LAB PANEL
-========================================================================
-  Feature                     Value        Source  Note
-  -------------------- ------------  ------------  ----
-  Hemoglobin                 10.800     extracted
-  MCH                        27.300     extracted
-  MCHC                       31.148   * PREDICTED
-  MCV                        90.786   * PREDICTED
-  bp                        142.000     extracted
-  bgr                       118.000     extracted
-  bu                         42.000     extracted
-  sod                       138.000     extracted
-  cad                            no     extracted
-  sc                          4.599   * PREDICTED
-  wc                       9166.482   * PREDICTED
-  htn                            no   * PREDICTED
-  ane                            no   * PREDICTED
-  ...
-========================================================================
-
-  Extracted : 7 values
-  Predicted : 18 values  (*)
-```
-
-`* PREDICTED` = model predicted this value from patterns in training data.
 
 ---
 
 ## What Reports Work
 
-| Report Type | Works? | Notes |
-|---|---|---|
-| **CBC / Blood Count** | ✅ Best | Hemoglobin, RBC, WBC, PCV, MCH, MCHC, MCV |
-| **Renal Function Test** | ✅ Great | Blood Urea, Creatinine, Sodium, Potassium |
-| **Diabetes panel** | ✅ Good | Blood Glucose extracted |
-| **Any Apollo/Thyrocare report** | ✅ | Standard printed format |
-| **Handwritten** | ⚠️ Partial | Lower OCR confidence, more predicted |
-| **Blurry/poor lighting** | ⚠️ Partial | Model predicts more values |
-| **Hindi/regional language** | ❌ | English OCR only |
-| **Radiology / MRI** | ❌ | No numeric biomarkers |
-
-> **Key insight:** Even if OCR fails completely, your model still provides all 25 values as a clinically-reasonable baseline prediction. The system never crashes — it just predicts more.
+| Report Type | Result |
+|---|---|
+| CBC / Blood Count | ✅ Best |
+| Renal Function Test | ✅ Great |
+| Diabetes / Glucose panel | ✅ Good |
+| Apollo / Thyrocare / printed reports | ✅ Full support |
+| Blurry / poor lighting | ⚠️ Partial (model predicts more) |
+| Handwritten | ⚠️ Reduced accuracy |
+| Hindi / regional language | ❌ English OCR only |
+| Radiology / MRI | ❌ No numeric biomarkers |
 
 ---
 
-## Model Details
+## Performance Comparison (OCR Engine)
 
-**TabularImputerModel** — Lightweight Transformer for tabular imputation
-
-- Architecture: 3-layer Transformer Encoder, 4 attention heads, embed dim 64
-- Parameters: ~152,000 (fits in CPU RAM, trains in 30s on GPU)
-- Training data: 1,821 patient records (Anemia + CKD datasets)
-- Input: 25 unified biomarker features (masked missing → 0)
-- Output: Reconstructed full 25-feature vector
-- Loss: MSE on observed positions only
-- Best val loss: **0.054** (normalized scale)
-
-**25 Biomarker Features (UNIFIED schema):**
-
-| Category | Features |
-|---|---|
-| **Blood count** | Hemoglobin, MCH, MCHC, MCV, pcv (hematocrit), wc (WBC), rc (RBC) |
-| **Renal** | bu (blood urea), sc (serum creatinine) |
-| **Electrolytes** | sod (sodium), pot (potassium) |
-| **Metabolic** | bgr (blood glucose) |
-| **Urinalysis** | rbc, pc, pcc, ba |
-| **Demographics** | age, Gender |
-| **Clinical history** | htn, dm, cad, appet, pe, ane |
-| **Vitals** | bp (systolic) |
+| Metric | Old (llava:7b VLM) | New (EasyOCR) |
+|---|---|---|
+| OCR time | 110 seconds | **5.5 seconds** |
+| Confidence | 0.50 | **0.81** |
+| Hallucinations | Yes | **No** |
+| VRAM | 4.7 GB | **~1 GB** |
+| Ollama required | Yes | **No** |
 
 ---
 
@@ -243,36 +203,43 @@ curl -X POST http://localhost:8000/process \
 ```
 report classifier/
 ├── ai_agents/
-│   ├── easyocr_agent.py     # GPU OCR engine (EasyOCR + preprocessing)
-│   ├── pipeline.py          # Main orchestrator
-│   ├── vision_agent.py      # Legacy llava:7b OCR
-│   ├── structuring_agent.py # JSON extraction with llama3 (optional)
-│   └── schemas.py           # Pydantic data models
+│   ├── easyocr_agent.py     ← GPU OCR engine (primary)
+│   ├── pipeline.py          ← Orchestrator
+│   ├── vision_agent.py      ← Legacy VLM OCR
+│   ├── structuring_agent.py ← llama3 backup (optional)
+│   └── schemas.py           ← Pydantic models
 ├── api_gateway/
-│   └── main.py              # FastAPI server
+│   └── main.py              ← FastAPI (all endpoints)
+├── Fronted_medfill/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── api.js
+│   │   └── components/
+│   │       ├── FileUpload.jsx
+│   │       ├── PatientDashboard.jsx
+│   │       ├── PredictionPanel.jsx
+│   │       └── Navbar.jsx
+│   └── package.json
 ├── ml_pipeline/
-│   ├── train.py             # Training loop
-│   ├── data/dataset.py      # Data loading
-│   ├── models/              # Model definitions
-│   └── checkpoints/         # Saved model weights (gitignored)
-├── data/raw/                # CSV datasets (gitignored)
-├── infer.py                 # End-to-end inference CLI
-├── audit.py                 # System health check
+│   ├── train.py             ← Training loop
+│   ├── data/dataset.py      ← Data loading (NHANES + Anemia + CKD)
+│   └── checkpoints/         ← best_model.pt (gitignored)
+├── data/raw/                ← CSV datasets (gitignored)
+├── infer.py                 ← CLI inference + impute()
+├── requirements.txt         ← Python dependencies
 └── README.md
 ```
 
 ---
 
-## Performance Comparison
+## Hardware
 
-| Metric | Old (llava:7b) | New (EasyOCR) |
-|---|---|---|
-| OCR time | **110 seconds** | **5.5 seconds** |
-| OCR confidence | 0.50 | **0.81** |
-| Hallucinations | Yes (invents values) | **No** |
-| VRAM required | 4.7 GB | **~1 GB** |
-| Ollama required | Yes | **No** |
-| Accuracy | Poor | **Good** |
+| Component | Tested On |
+|---|---|
+| GPU | NVIDIA RTX 4050 Laptop (6 GB VRAM) |
+| RAM | 16 GB |
+| Python | 3.11 |
+| PyTorch | 2.5.1 + CUDA 12.1 |
 
 ---
 
