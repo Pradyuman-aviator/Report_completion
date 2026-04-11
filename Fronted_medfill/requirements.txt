@@ -1,0 +1,30 @@
+# MedFill Frontend — Requirements
+# React + Vite + TailwindCSS Dashboard
+#
+# Install all dependencies:
+#   npm install
+#
+# Run dev server (http://localhost:5173):
+#   npm run dev
+#
+# Build for production:
+#   npm run build
+#
+# ── Runtime Dependencies ──────────────────────────────────────────────────────
+# react@^18.3.1               — UI framework
+# react-dom@^18.3.1           — React DOM renderer
+# axios@^1.7.2                — HTTP client for FastAPI backend
+# lucide-react@^0.395.0       — Icon library
+#
+# ── Dev Dependencies ──────────────────────────────────────────────────────────
+# vite@^5.3.1                 — Build tool & dev server
+# @vitejs/plugin-react@^4.3.1 — React support for Vite
+# tailwindcss@^3.4.6          — Utility-first CSS framework
+# postcss@^8.4.39             — CSS processor (required by Tailwind)
+# autoprefixer@^10.4.19       — CSS vendor prefixes (required by Tailwind)
+# @types/react@^18.3.3        — TypeScript types for React
+# @types/react-dom@^18.3.0    — TypeScript types for React DOM
+#
+# ── Backend Requirements (Python) ─────────────────────────────────────────────
+# See: ../requirements.txt
+# Run backend: uvicorn api_gateway.main:app --reload --port 8000
