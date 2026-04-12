@@ -248,8 +248,10 @@ report classifier/
 | Name | Role |
 |---|---|
 | **Pradyuman** | ML pipeline · Transformer model · FastAPI backend · EasyOCR integration |
-| **Zulikha** | Dataset research · Model evaluation · Clinical validation |
-| **Kshitij** | React frontend · UI/UX design · API integration |
+| **Kshitij** | Dataset research · Model evaluation · Clinical validation |
+| **Zulikha** | React frontend · UI/UX design · API integration |
+| **Parth Bansal** | Project analysis · Research · Presentation & pitch |
+| **Prince** | Project analysis · Research · Presentation & pitch |
 
 ---
 
