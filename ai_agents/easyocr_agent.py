@@ -1,5 +1,5 @@
 """
-ai_agents/easyocr_agent.py
+ai_agents/easyocr_agent.py  v1.0
 ===========================
 EasyOCR-based Vision Agent — drop-in replacement for llava:7b
 --------------------------------------------------------------

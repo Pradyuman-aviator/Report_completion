@@ -1,7 +1,7 @@
 """
-ml_pipeline/train.py
+ml_pipeline/train.py  v1.0
 =====================
-Tabular Imputation Training Loop — MedFill VQ-VAE
+Tabular Imputation Training Loop — MedFill
 ---------------------------------------------------
 
 Trains a Transformer-based tabular imputation model on the combined

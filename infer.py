@@ -1,7 +1,7 @@
 """
 infer.py
 =========
-MedFill End-to-End Inference
+# MedFill — Inference Pipeline v1.0
 -----------------------------
 
 Give it a medical report image → get back a complete lab panel with ALL

@@ -42,7 +42,7 @@ logging.basicConfig(
 # ──────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="MedFill API Gateway",
+    title="MedFill API v1.0.0",
     description=(
         "Local-first medical report OCR and structuring pipeline.\n"
         "All inference runs entirely on-device via Ollama — zero cloud calls."
