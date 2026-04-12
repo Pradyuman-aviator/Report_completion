@@ -142,6 +142,37 @@ def _build_schema_excerpt() -> str:
 }""".strip()
 
 
+def _focus_ocr_text(raw_ocr_text: str, max_chars: int = 3500) -> str:
+    """
+    Filter OCR text to keep only lines most likely to contain lab results.
+    Reduces 9000+ char OCR dumps to ~2000 chars that llama3 can reliably parse.
+    """
+    import re
+    lines = raw_ocr_text.splitlines()
+    keep = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Always keep: lines with digits (test values), patient info, section headers
+        has_number  = bool(re.search(r'\d', stripped))
+        is_header   = any(kw in stripped.lower() for kw in [
+            "patient", "name", "age", "sex", "gender", "date", "report",
+            "blood", "urine", "renal", "count", "cbc", "kft", "rft", "lft",
+            "panel", "test", "result", "reference", "hemoglobin", "haemoglobin",
+            "creatinine", "urea", "sodium", "potassium", "glucose", "history",
+            "pressure", "hypertension", "diabetes", "coronary",
+        ])
+        if has_number or is_header:
+            keep.append(stripped)
+
+    focused = "\n".join(keep)
+    # Hard cap to keep within llama3 context
+    if len(focused) > max_chars:
+        focused = focused[:max_chars] + "\n...[truncated]"
+    return focused
+
+
 def _build_initial_prompt(raw_ocr_text: str, schema_str: str) -> str:
     return f"""You are a precise medical data extraction AI.
 
@@ -151,9 +182,10 @@ STRICT RULES:
 1. Output ONLY the JSON object. No markdown, no code fences, no explanation before or after.
 2. Every key in the schema must be present. Use null for missing or illegible values.
 3. Numbers must be actual JSON numbers (not strings). Dates must be "YYYY-MM-DD".
-4. For lab_panels: group related tests into panels (e.g. all CBC tests in one panel).
-5. If the report contains multiple documents (e.g. prescription stapled to blood test), extract only the PRIMARY/DOMINANT document. Add a note about the secondary document in the key "extraction_warnings_hint" at the root level of your JSON (this will be captured separately).
-6. Do NOT invent or hallucinate values not present in the text. Use null instead.
+4. CRITICAL: For lab_panels — you MUST extract ALL test results from the text into lab_panels. This is the most important field. Do NOT leave lab_panels as an empty list [] if test results appear in the text. Group CBC tests in one panel, RFT/KFT in another, etc.
+5. For PENDING or '---' values: set value=null and value_text="PENDING".
+6. For clinical history fields like Hypertension/Diabetes, extract them as lab results under a panel called "Clinical History".
+7. Do NOT invent or hallucinate values not present in the text. Use null instead.
 
 SCHEMA TO FOLLOW:
 {schema_str}
@@ -163,7 +195,7 @@ OCR TEXT TO PARSE:
 {raw_ocr_text}
 ---
 
-Output the JSON object now:"""
+Output the JSON object now (remember: lab_panels MUST contain the test results):"""
 
 
 def _build_retry_prompt(
@@ -420,7 +452,9 @@ class StructuringAgent:
         )
 
         # ── Retry loop ───────────────────────────────────────────────────────
-        prompt       = _build_initial_prompt(raw_ocr_text, self._schema_str)
+        # Pre-focus: keep only content-rich lines to stay within llama3 context
+        focused_ocr = _focus_ocr_text(raw_ocr_text)
+        prompt       = _build_initial_prompt(focused_ocr, self._schema_str)
         last_json_str = ""
 
         for attempt in range(1, self.max_retries + 1):

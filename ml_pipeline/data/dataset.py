@@ -49,6 +49,16 @@ def _load_ckd(p: Path) -> pd.DataFrame:
     return df[UNIFIED + ["label", "dataset"]]
 
 
+def _load_nhanes(p: Path) -> pd.DataFrame:
+    """Load a nhanes_anemia.csv or nhanes_ckd.csv produced by nhanes_to_medfill.py."""
+    df = pd.read_csv(p)
+    df["dataset"] = p.stem          # 'nhanes_anemia' or 'nhanes_ckd'
+    for c in UNIFIED:
+        if c not in df.columns:
+            df[c] = np.nan
+    return df[UNIFIED + ["label", "dataset"]]
+
+
 def _normalise(merged: pd.DataFrame) -> pd.DataFrame:
     means = merged[UNIFIED].mean()
     stds  = merged[UNIFIED].std().replace(0, 1)
@@ -99,10 +109,18 @@ def build_loaders(
     num_workers: int   = 0,
     seed:        int   = 42,
 ) -> Tuple[DataLoader, DataLoader, Dict]:
-    raw = Path(raw_dir)
-    a   = _load_anemia(raw / "anemia.csv")
-    b   = _load_ckd(raw / "kidney_disease.csv")
-    merged = pd.concat([a, b], ignore_index=True)
+    raw    = Path(raw_dir)
+    frames = [
+        _load_anemia(raw / "anemia.csv"),
+        _load_ckd(raw   / "kidney_disease.csv"),
+    ]
+    # ── NHANES augmentation (optional — only when files exist) ───────────────
+    for nhanes_csv in ["nhanes_anemia.csv", "nhanes_ckd.csv"]:
+        p = raw / nhanes_csv
+        if p.exists():
+            frames.append(_load_nhanes(p))
+            print(f"[dataset] +NHANES {nhanes_csv}")
+    merged = pd.concat(frames, ignore_index=True)
     for c in UNIFIED:
         merged[c] = pd.to_numeric(merged[c], errors="coerce").astype("float32")
     merged = merged.dropna(subset=["label"])

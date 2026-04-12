@@ -191,21 +191,20 @@ def load_normalization_stats(raw_dir: str = "data/raw"):
 
 def direct_parse_ocr(raw_ocr_text: str) -> Dict[str, Optional[float]]:
     """
-    Line-by-line OCR parser.
-    Strategy:
-      1. Split text into lines
-      2. Find the line containing the test name keyword
-      3. Take the FIRST number on that line = the result value
-         (Reference ranges like '13.0 - 17.0' come AFTER the result,
-          so the first number is always the actual measurement)
-      4. Skip lines with '---' or 'PENDING' — leave as None for model to predict
+    Line-by-line OCR parser, tuned to EasyOCR's exact output format.
+
+    EasyOCR merges table columns into one line per row, e.g.:
+      "Hemoglobin (Hb)   10.8 (L)   13.0 - 17.0   g/dl   Final"
+      "Known Hypertension   Yes"
+      "Age   ...   52 Years   MR: RAHUL SHARMA   Male   ..."
+      "Packed Cell Volume (PCVIHematocrit)   34 (L)   40 - 50"
     """
     import re
     features: Dict[str, Optional[float]] = {col: None for col in UNIFIED}
     lines = raw_ocr_text.splitlines()
 
     def find_line(keywords: list) -> Optional[str]:
-        """Return first line containing any of the keywords (case-insensitive)."""
+        """Return first line containing ANY keyword (case-insensitive)."""
         for line in lines:
             lo = line.lower()
             if any(kw.lower() in lo for kw in keywords):
@@ -214,73 +213,108 @@ def direct_parse_ocr(raw_ocr_text: str) -> Dict[str, Optional[float]]:
 
     def first_num(line: str, max_val: float = 9999.0) -> Optional[float]:
         """
-        Get the first numeric value on the line.
-        - Returns None if line has '---' or 'pending' (missing value)
-        - Returns None if the first number exceeds max_val (catches IDs/dates)
+        Get the result value from a lab line.
+        Strategy: prefer DECIMAL numbers first (e.g. 10.8, 27.3, 3.8)
+        then fall back to integers. Skip PENDING lines (no numeric result).
+        Reject values > max_val (catches reference range / ID numbers).
         """
         if not line:
             return None
-        if re.search(r"---|\bpending\b", line, re.IGNORECASE):
+        if re.search(r"\bpending\b", line, re.IGNORECASE):
             return None
-        m = re.search(r"(\d+\.?\d*)", line)
-        if not m:
-            return None
-        val = float(m.group(1))
-        # Sanity guard: reject obviously wrong values (patient IDs, dates)
-        if val > max_val:
-            return None
-        return val
+        # Try decimal first — more specific, avoids catching reference range mins
+        m = re.search(r"\b(\d{1,4}\.\d+)\s*(?:\(L\)|\(H\)|\(N\))?", line)
+        if m:
+            val = float(m.group(1))
+            if val <= max_val:
+                return val
+        # Fall back to plain integer
+        m = re.search(r"\b(\d{1,5})\s*(?:\(L\)|\(H\)|\(N\))?", line)
+        if m:
+            val = float(m.group(1))
+            if val <= max_val:
+                return val
+        return None
 
     def extract(keywords: list, max_val: float = 9999.0) -> Optional[float]:
         return first_num(find_line(keywords), max_val=max_val)
 
     def extract_yn(keywords: list) -> Optional[float]:
+        """Handle 'Key : Yes', 'Key : No', 'Key   Yes', 'Key   No'."""
         line = find_line(keywords)
         if not line:
             return None
         lo = line.lower()
-        if re.search(r":\s*yes\b", lo):   return 1.0
-        if re.search(r":\s*no\b",  lo):   return 0.0
-        if re.search(r"---", lo):          return None   # unknown → let model predict
+        # Match both colon-separated and space-separated Yes/No
+        if re.search(r"(?::\s*|\s{2,})yes\b", lo):  return 1.0
+        if re.search(r"(?::\s*|\s{2,})no\b",  lo):  return 0.0
         return None
 
-    # ── Numeric lab values ────────────────────────────────────────────────
-    features["Hemoglobin"] = extract(["Hemoglobin (Hb)", "Haemoglobin (Hb)", "Hemoglobin"], max_val=25.0)
-    features["MCH"]        = extract(["Mean Corpuscular Hb (MCH)", "MCH)"],                  max_val=50.0)
-    features["MCHC"]       = extract(["Mean Corpuscular Hb Conc (MCHC)", "MCHC)"],           max_val=45.0)
-    features["MCV"]        = extract(["Mean Corpuscular Volume (MCV)", "MCV)"],               max_val=150.0)
-    features["pcv"]        = extract(["Packed Cell Volume (PCV", "PCV/Hematocrit"],          max_val=70.0)
-    features["wc"]         = extract(["White Blood Cell Count (TLC)", "White Blood Cell Count", "WBC Count"], max_val=100000.0)
-    features["rc"]         = extract(["Red Blood Cell Count", "RBC Count"],                  max_val=10.0)
-    features["bu"]         = extract(["Blood Urea"],                                          max_val=300.0)
-    features["sc"]         = extract(["Serum Creatinine"],                                    max_val=20.0)
-    features["sod"]        = extract(["Sodium (Na+)", "Sodium"],                              max_val=200.0)
-    features["pot"]        = extract(["Potassium (K+)", "Potassium"],                         max_val=10.0)
-    features["bgr"]        = extract(["Blood Glucose (Random)", "Blood Glucose", "Random Glucose"], max_val=600.0)
+    # ── Numeric lab values — keywords tuned to EasyOCR output ─────────────
+    # EasyOCR sometimes reads '/' as 'I', so add both variants
+    features["Hemoglobin"] = extract(
+        ["Hemoglobin (Hb)", "Haemoglobin (Hb)"], max_val=25.0)
 
+    features["MCH"]  = extract(
+        ["Mean Corpuscular Hb (MCH)", "Corpuscular Hb (MCH)"], max_val=50.0)
 
-    # ── Blood pressure: look for "142/88" pattern ─────────────────────────
+    features["MCHC"] = extract(
+        ["Mean Corpuscular Hb Conc (MCHC)", "Corpuscular Hb Conc"], max_val=45.0)
+
+    features["MCV"]  = extract(
+        ["Mean Corpuscular Volume (MCV)", "Corpuscular Volume (MCV)"], max_val=150.0)
+
+    features["pcv"]  = extract(
+        # EasyOCR reads '/' as 'I' → "PCVIHematocrit"
+        ["Packed Cell Volume (PCV", "PCVIHematocrit", "PCV/Hematocrit",
+         "Hematocrit)"], max_val=70.0)
+
+    features["wc"]   = extract(
+        ["White Blood Cell Count (TLC)", "White Blood Cell Count"], max_val=100000.0)
+
+    features["rc"]   = extract(
+        ["Red Blood Cell Count"], max_val=10.0)
+
+    features["bu"]   = extract(["Blood Urea"], max_val=300.0)
+
+    features["sc"]   = extract(["Serum Creatinine"], max_val=20.0)
+
+    features["sod"]  = extract(["Sodium (Na+)", "Sodium"], max_val=200.0)
+
+    features["pot"]  = extract(["Potassium (K+)", "Potassium"], max_val=10.0)
+
+    features["bgr"]  = extract(
+        ["Blood Glucose (Random)", "Blood Glucose"], max_val=600.0)
+
+    # ── Blood Pressure — "142/88 mmHg" ───────────────────────────────────
     for line in lines:
-        if "blood pressure" in line.lower() or "bp " in line.lower():
+        if "blood pressure" in line.lower():
             m = re.search(r"(\d{2,3})\s*/\s*(\d{2,3})", line)
             if m:
                 features["bp"] = float(m.group(1))
                 break
 
-    # ── Age + Gender from "52 Years / Male" ──────────────────────────────
+    # ── Age + Gender — "52 Years   MR: RAHUL SHARMA   Male" ─────────────
+    # EasyOCR merges the Age/Gender row — no '/' separator
     for line in lines:
-        m = re.search(r"(\d+)\s*[Yy]ears?\s*/\s*(Male|Female)", line, re.IGNORECASE)
+        # Try "52 Years / Male" first (standard)
+        m = re.search(r"(\d{1,3})\s*[Yy]ears?\s*/\s*(Male|Female)", line, re.IGNORECASE)
+        if not m:
+            # EasyOCR format: "52 Years   ... Male"
+            m = re.search(r"(\d{1,3})\s*[Yy]ears?.*?\b(Male|Female)\b", line, re.IGNORECASE)
         if m:
             features["age"]    = float(m.group(1))
             features["Gender"] = 1.0 if m.group(2).lower() == "male" else 0.0
             break
 
-    # ── Yes/No clinical history ───────────────────────────────────────────
+    # ── Clinical History — handle both ': Yes' and '   Yes' ─────────────
     features["htn"] = extract_yn(["Known Hypertension", "Hypertension"])
-    features["dm"]  = extract_yn(["Diabetes Mellitus", "Diabetes"])
+    features["dm"]  = extract_yn(["Diabetes Mellitus"])
     features["cad"] = extract_yn(["Coronary Artery Disease"])
 
     return features
+
+
 
 
 

@@ -85,7 +85,7 @@ TabularImputerModel         — predicts all 13 missing values
 | Dataset | Source | Patients | Features |
 |---|---|---|---|
 | **Anemia Dataset** | [Kaggle (CC0)](https://www.kaggle.com/datasets/biswaranjanrao/anemia-dataset) | 1,421 | Hemoglobin, MCH, MCHC, MCV, Gender |
-| **CKD Dataset** | [UCI ML Repository](https://archive.ics.uci.edu/dataset/336/chronic+kidney+disease) · donated by Apollo Hospitals | 400 | 25 biomarkers (renal, electrolytes, urinalysis) |
+| **CKD Dataset** | [Kaggle — CKD Disease](https://www.kaggle.com/datasets/mansoordaku/ckdisease) · donated by Apollo Hospitals | 400 | 25 biomarkers (renal, electrolytes, urinalysis) |
 | **NHANES** | [CDC NHANES](https://www.cdc.gov/nchs/nhanes/) | 10,816 | Blood count, metabolic, renal panels |
 | **Combined** | — | **12,637** | **25 unified features** |
 
@@ -240,6 +240,16 @@ report classifier/
 | RAM | 16 GB |
 | Python | 3.11 |
 | PyTorch | 2.5.1 + CUDA 12.1 |
+
+---
+
+## Contributors
+
+| Name | Role |
+|---|---|
+| **Pradyuman** | ML pipeline · Transformer model · FastAPI backend · EasyOCR integration |
+| **Zulikha** | Dataset research · Model evaluation · Clinical validation |
+| **Kshitij** | React frontend · UI/UX design · API integration |
 
 ---
 

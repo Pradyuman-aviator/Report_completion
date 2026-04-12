@@ -489,7 +489,14 @@ class VisionAgent:
         """Fail fast if Ollama is not running or model is not pulled."""
         try:
             models = self._client.list()
-            available = [m["name"] for m in models.get("models", [])]
+            # SDK v0.4+ returns objects with .model attr; older returns dicts with "name"
+            raw_list = models.get("models", []) if isinstance(models, dict) else getattr(models, "models", [])
+            available = []
+            for m in raw_list:
+                if isinstance(m, dict):
+                    available.append(m.get("name") or m.get("model", ""))
+                else:
+                    available.append(getattr(m, "model", getattr(m, "name", "")))
             if not any(self.model in m for m in available):
                 logger.warning(
                     f"[VisionAgent] Model '{self.model}' not found in Ollama.\n"

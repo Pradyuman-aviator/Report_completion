@@ -164,16 +164,24 @@ def imputation_loss(
     pred:     torch.Tensor,   # (B, F) model output
     target:   torch.Tensor,   # (B, F) original (unmasked) values
     obs_mask: torch.Tensor,   # (B, F) 1=originally observed, 0=was NaN in data
+    feature_weights: torch.Tensor = None,  # (F,) optional per-feature weight
 ) -> torch.Tensor:
     """
-    MSE only on positions that were originally present in the dataset.
-    We don't penalise the model for positions that were ALWAYS missing
-    (NaN in source CSV) — there is no ground truth for those.
+    Weighted MSE on positions that were originally present in the dataset.
+    NHANES rows are ~60% sparse (NaN for CKD categoricals), so features
+    that ARE observed in NHANES carry more signal and get upweighted.
+    We don't penalise the model for positions that were ALWAYS missing.
     """
     diff  = (pred - target) ** 2          # (B, F)
     valid = obs_mask.bool()               # where ground-truth exists
     if valid.sum() == 0:
         return diff.mean()                # fallback: shouldn't happen
+
+    if feature_weights is not None:
+        # (B, F) weight per feature, broadcast
+        w = feature_weights.unsqueeze(0).expand_as(diff)  # (B, F)
+        weighted = diff * w
+        return weighted[valid].mean()
     return diff[valid].mean()
 
 
@@ -287,13 +295,46 @@ def train(
 
     # ── Optimiser ────────────────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
+
+    # Warmup for 5% of total steps, then cosine decay
+    total_steps  = epochs * len(train_loader)
+    warmup_steps = max(1, int(0.05 * total_steps))
+    def lr_lambda(step: int) -> float:
+        if step < warmup_steps:
+            return step / warmup_steps
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        return max(0.01, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    global_step = 0
 
     # ── Resume ───────────────────────────────────────────────────────────────
     start_epoch = 0
     best_val    = float("inf")
     if resume_path and Path(resume_path).exists():
-        start_epoch, best_val = load_checkpoint(Path(resume_path), model, optimizer, device)
+        state = torch.load(Path(resume_path), map_location=device)
+        model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        start_epoch  = state["epoch"] + 1
+        best_val     = state["best_val"]
+        global_step  = state.get("global_step", 0)
+        print(f"[train] Resumed from epoch {state['epoch']} (best_val={best_val:.5f})")
+
+    # -- Feature-presence weights: up-weight features rare in NHANES --------
+    # Compute obs rate per feature across the training set (first pass)
+    print("[train] Computing per-feature observation rates...")
+    feat_obs_sum   = torch.zeros(F, device=device)
+    feat_total     = 0
+    with torch.no_grad():
+        for batch in train_loader:
+            om = batch["obs_mask"].to(device)   # (B, F)
+            feat_obs_sum += om.sum(0)
+            feat_total   += om.shape[0]
+    obs_rate = feat_obs_sum / max(feat_total, 1)    # (F,) in [0, 1]
+    # Inverse-frequency weight, clipped to [0.5, 4.0]
+    feat_weights = (1.0 / (obs_rate + 1e-6)).clamp(0.5, 4.0)
+    feat_weights = feat_weights / feat_weights.mean()   # normalise to mean=1
+    print(f"[train] Feature weights: min={feat_weights.min():.2f}  "
+          f"max={feat_weights.max():.2f}  mean={feat_weights.mean():.2f}")
 
     ckpt_path = Path(ckpt_dir)
 
@@ -306,9 +347,43 @@ def train(
     for epoch in range(start_epoch, epochs):
         t0 = time.time()
 
-        train_loss = run_epoch(model, train_loader, optimizer, device, is_train=True)
-        val_loss   = run_epoch(model, val_loader,   None,      device, is_train=False)
-        scheduler.step()
+        # ── train ──
+        model.train()
+        train_loss = 0.0
+        n_train = 0
+        for batch in train_loader:
+            masked_x   = batch["masked_x"].to(device)
+            original_x = batch["original_x"].to(device)
+            obs_mask   = batch["obs_mask"].to(device)
+
+            pred = model(masked_x)
+            loss = imputation_loss(pred, original_x, obs_mask, feat_weights)
+
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            scheduler.step()
+            global_step += 1
+
+            train_loss += loss.item()
+            n_train    += 1
+        train_loss /= max(n_train, 1)
+
+        # ── val ──
+        model.eval()
+        val_loss = 0.0
+        n_val    = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                masked_x   = batch["masked_x"].to(device)
+                original_x = batch["original_x"].to(device)
+                obs_mask   = batch["obs_mask"].to(device)
+                pred = model(masked_x)
+                loss = imputation_loss(pred, original_x, obs_mask, feat_weights)
+                val_loss += loss.item()
+                n_val    += 1
+        val_loss /= max(n_val, 1)
 
         elapsed = time.time() - t0
         lr_now  = optimizer.param_groups[0]["lr"]
@@ -319,15 +394,25 @@ def train(
             f"lr={lr_now:.2e}  ({elapsed:.1f}s)"
         )
 
-        # Save best
         if val_loss < best_val:
             best_val = val_loss
-            save_checkpoint(ckpt_path / "best_model.pt", epoch, model, optimizer, best_val)
-            print(f"  ✓ New best val loss: {best_val:.5f}")
+            torch.save({
+                "epoch": epoch,
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "best_val": best_val,
+                "global_step": global_step,
+            }, ckpt_path / "best_model.pt")
+            print(f"  [best] val={best_val:.5f}  -> saved")
 
-        # Save periodic checkpoint every 10 epochs
         if (epoch + 1) % 10 == 0:
-            save_checkpoint(ckpt_path / f"epoch_{epoch+1:04d}.pt", epoch, model, optimizer, best_val)
+            torch.save({
+                "epoch": epoch,
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "best_val": best_val,
+                "global_step": global_step,
+            }, ckpt_path / f"epoch_{epoch+1:04d}.pt")
 
     print(f"\n{'='*60}")
     print(f"  Training Complete!  Best val loss: {best_val:.5f}")
@@ -342,12 +427,12 @@ def train(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MedFill Tabular Imputation Training")
     parser.add_argument("--data-dir",   default="data/raw",                        help="Raw CSV directory")
-    parser.add_argument("--epochs",     default=50,   type=int,                    help="Number of epochs")
-    parser.add_argument("--batch-size", default=64,   type=int,                    help="Batch size")
+    parser.add_argument("--epochs",     default=80,   type=int,                    help="Number of epochs")
+    parser.add_argument("--batch-size", default=128,  type=int,                    help="Batch size")
     parser.add_argument("--lr",         default=3e-4, type=float,                  help="Learning rate")
-    parser.add_argument("--embed-dim",  default=64,   type=int,                    help="Feature embedding dim")
-    parser.add_argument("--depth",      default=3,    type=int,                    help="Transformer layers")
-    parser.add_argument("--mask-ratio", default=0.30, type=float,                  help="Fraction of features to mask during training")
+    parser.add_argument("--embed-dim",  default=128,  type=int,                    help="Feature embedding dim")
+    parser.add_argument("--depth",      default=4,    type=int,                    help="Transformer layers")
+    parser.add_argument("--mask-ratio", default=0.35, type=float,                  help="Fraction of features to mask during training")
     parser.add_argument("--ckpt-dir",   default="ml_pipeline/checkpoints",         help="Checkpoint output directory")
     parser.add_argument("--resume",     default=None,                              help="Path to checkpoint to resume from")
     parser.add_argument("--seed",       default=42,   type=int,                    help="Random seed")
