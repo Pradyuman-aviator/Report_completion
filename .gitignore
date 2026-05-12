@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# Large data files (do NOT commit)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.feather
+
+# Model checkpoints (too large for GitHub)
+ml_pipeline/checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+
+# Weights & Biases
+wandb/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temp
+test.py
+
+# ── Node.js / Frontend (Fronted_medfill) ─────────────────────────────────────
+node_modules/
+Fronted_medfill/node_modules/
+dashboard_ui/node_modules/
+
+# Vite build output
+Fronted_medfill/dist/
+Fronted_medfill/.vite/
+dashboard_ui/dist/
+
+# Frontend env files
+Fronted_medfill/.env
+Fronted_medfill/.env.local
+Fronted_medfill/.env.*.local
+
+# npm / yarn / pnpm lockfiles (keep package-lock.json, ignore others)
+yarn.lock
+pnpm-lock.yaml
+.pnp
+.pnp.js
+
+# npm cache / debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vite temp cache
+.vite/

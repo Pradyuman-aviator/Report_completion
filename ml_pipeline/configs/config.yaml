@@ -1,0 +1,95 @@
+# ml_pipeline/configs/config.yaml
+# ================================
+# Master configuration for V-JEPA + ClinicalBERT Medical Diagnostic Pipeline
+# Edit values here — train.py reads this file via OmegaConf / PyYAML.
+
+# ── Experiment ────────────────────────────────────────────────────────────────
+experiment:
+  name:    "v-jepa-medical-001"
+  seed:    42
+  debug:   false         # If true: 1 batch per epoch, fast iteration
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+paths:
+  csv_manifest:   "data/manifest.csv"
+  image_dir:      "data/images/"
+  bert_emb_dir:   "data/bert_embs/"
+  checkpoint_dir: "ml_pipeline/checkpoints/"
+  log_dir:        "logs/"
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+data:
+  image_size:   224          # Must match encoder patch_size divisibility
+  in_channels:  3            # 3 = RGB scans, 1 = greyscale (will be expanded to 3)
+  batch_size:   16           # Safe for 16 GB unified memory (M1/M2)
+  num_workers:  4            # Windows/CUDA: 4 workers is safe. Set to 0 if you get DataLoader errors.
+  val_split:    0.10         # 10 % of dataset held out for validation
+  mask_ratio:   0.50         # Fraction of patches to mask (block masking)
+
+# ── Encoder (ViT) ─────────────────────────────────────────────────────────────
+encoder:
+  image_size:    224
+  patch_size:    16           # → 196 patches per image
+  in_channels:   3
+  embed_dim:     768          # ViT-Base hidden size
+  depth:         12           # ContextEncoder transformer layers
+  num_heads:     12
+  mlp_ratio:     4.0
+  dropout:       0.1
+  emb_dropout:   0.0
+  use_cls_token: true
+
+# ── Target Encoder EMA ────────────────────────────────────────────────────────
+ema:
+  start_decay:   0.996        # τ at step 0
+  end_decay:     0.9999       # τ at final step (cosine schedule)
+
+# ── Predictor (Option B: 6-layer, 12-head, 768-dim) ──────────────────────────
+predictor:
+  embed_dim:   768
+  num_heads:   12
+  depth:       6              # Asymmetric: shallower than encoder (12 L)
+  mlp_ratio:   4.0
+  dropout:     0.1
+  max_seq_len: 1024
+
+# ── Loss ──────────────────────────────────────────────────────────────────────
+loss:
+  lambda_jepa:    1.0         # Weight of the latent MSE term
+  lambda_distil:  0.5         # Weight of the NT-Xent BERT distillation term
+  jepa_loss_type: "mse"       # "mse" | "smooth_l1"
+  smooth_l1_beta: 1.0
+  temperature:    0.07        # NT-Xent temperature τ
+  proj_vis_dim:   768         # Matches encoder embed_dim
+  proj_txt_dim:   768         # ClinicalBERT hidden size
+  proj_out_dim:   256         # Shared contrastive projection space
+  proj_dropout:   0.1
+  normalize_jepa: true        # L2-normalise before MSE (prevents collapse)
+
+# ── Optimiser ─────────────────────────────────────────────────────────────────
+optimizer:
+  name:           "adamw"
+  lr:             1.0e-4
+  weight_decay:   0.05
+  betas:          [0.9, 0.999]
+  eps:            1.0e-8
+  grad_clip_norm: 3.0         # Max gradient norm (prevents instability on MPS)
+
+# ── LR Schedule (cosine with linear warmup) ───────────────────────────────────
+scheduler:
+  warmup_epochs:  5           # Linear ramp from lr * 0.01 → lr
+  min_lr:         1.0e-6      # Floor for cosine anneal
+
+# ── Training ──────────────────────────────────────────────────────────────────
+training:
+  epochs:              50
+  ckpt_every_n_epochs: 5      # Save checkpoint every N epochs
+  log_every_n_steps:   10     # Log batch metrics to wandb every N steps
+  use_autocast:        true   # torch.autocast — mixed precision (CUDA + MPS). Auto-disabled on CPU.
+
+# ── Weights & Biases ──────────────────────────────────────────────────────────
+wandb:
+  project:  "medical-v-jepa"
+  entity:   ""                # Your wandb username / team (leave blank for default)
+  tags:     ["v-jepa", "clinicalbert", "medical", "windows", "cuda"]
+  log_model: true             # Upload checkpoints as wandb Artifacts

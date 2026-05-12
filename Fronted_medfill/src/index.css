@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    @apply bg-slate-50 text-slate-800 antialiased;
+    min-height: 100vh;
+    background-color: #f8fafc;
+    background-image:
+      radial-gradient(ellipse 70% 40% at 50% 0%, rgba(20,184,166,0.07) 0%, transparent 60%);
+  }
+}
+
+@layer components {
+
+  /* ── Cards ───────────────────────────────────────── */
+  .glass-card {
+    @apply bg-white border border-slate-200 rounded-2xl;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04);
+  }
+
+  /* ── Buttons ─────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5
+           bg-gradient-to-br from-teal-500 to-teal-700
+           hover:from-teal-400 hover:to-teal-600
+           text-white font-semibold rounded-xl text-sm
+           transition-all duration-200
+           shadow-md shadow-teal-500/20
+           hover:shadow-lg hover:shadow-teal-400/25
+           hover:-translate-y-0.5
+           active:translate-y-0 active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed
+           disabled:hover:translate-y-0 disabled:hover:shadow-md;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5
+           bg-slate-100 hover:bg-slate-200 border border-slate-200
+           text-slate-600 font-semibold rounded-xl text-sm
+           transition-all duration-200
+           active:scale-[0.98]
+           disabled:opacity-40;
+  }
+
+  /* ── Badges ──────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border;
+  }
+
+  .badge-normal  { @apply bg-emerald-50 text-emerald-700 border-emerald-200; }
+  .badge-high    { @apply bg-red-50    text-red-700    border-red-200;    }
+  .badge-low     { @apply bg-amber-50  text-amber-700  border-amber-200;  }
+  .badge-pending { @apply bg-violet-50 text-violet-600 border-violet-200; }
+  .badge-unknown { @apply bg-slate-100 text-slate-400  border-slate-200;  }
+
+  /* ── Labels ──────────────────────────────────────── */
+  .section-title {
+    @apply text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400;
+  }
+
+  /* ── Stat card ───────────────────────────────────── */
+  .stat-card {
+    @apply glass-card p-4 flex flex-col gap-1;
+  }
+
+  /* ── Lab rows ────────────────────────────────────── */
+  .lab-row {
+    @apply flex items-center justify-between py-2.5 px-3
+           transition-colors duration-100 hover:bg-slate-50;
+  }
+
+  .lab-row-abnormal {
+    @apply bg-red-50/60 hover:bg-red-50 border-l-2 border-red-400;
+  }
+
+  /* ── Gradient text ───────────────────────────────── */
+  .gradient-text {
+    @apply bg-gradient-to-r from-teal-600 via-cyan-500 to-teal-600 bg-clip-text text-transparent;
+  }
+
+  /* ── Glow ────────────────────────────────────────── */
+  .glow-teal { box-shadow: 0 0 24px -4px rgba(20,184,166,0.3); }
+  .glow-violet { box-shadow: 0 0 20px -4px rgba(139,92,246,0.25); }
+
+  /* ── Pill tag ────────────────────────────────────── */
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+           bg-white border border-slate-200 text-slate-600 shadow-sm;
+  }
+}
+
+@layer utilities {
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #e2e8f0 transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar       { width: 5px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 99px; }
+
+  /* Animations */
+  .animate-fade-in  { animation: fadeIn  0.4s cubic-bezier(0.16,1,0.3,1) both; }
+  .animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16,1,0.3,1) both; }
+  .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
+
+  .animate-shimmer {
+    background: linear-gradient(100deg, #f8fafc 30%, #f1f5f9 50%, #f8fafc 70%);
+    background-size: 400% 100%;
+    animation: shimmer 1.8s ease infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+}
+
+@keyframes fadeIn  { from { opacity:0 }                                to { opacity:1 } }
+@keyframes slideUp { from { opacity:0; transform:translateY(14px) }    to { opacity:1; transform:translateY(0) } }
+@keyframes scaleIn { from { opacity:0; transform:scale(0.94) }         to { opacity:1; transform:scale(1) } }
+@keyframes shimmer { 0%,100% { background-position:200% 0 } 50%{ background-position:-200% 0 } }
+@keyframes float   { 0%,100% { transform:translateY(0) } 50%{ transform:translateY(-6px) } }
+
+/* MedFill UI v1.0 */
